@@ -2,53 +2,13 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Bathroom Queue Organizer</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <style>
-    body { font-family: sans-serif; margin: 2rem; background: #f7f7f7; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 2rem; }
-    input, select, button { margin: 0.5rem; padding: 0.5rem; font-size: 1rem; }
-    .queues { display: flex; gap: 2rem; }
-    .queue { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 0 5px #ccc; flex: 1; }
-    .queue h2 { margin-top: 0; }
-    ol { padding-left: 1.2rem; }
-  </style>
-</head>
-<body>
-  <h1>Bathroom Queue Organizer</h1>
+  <title>Shower Queues</title>
+  <script type="module">
+    // Import Firebase
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+    import { getDatabase, ref, get, set, push, remove, onValue } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-database.js";
 
-  <form id="queueForm">
-    <input type="text" id="name" placeholder="Your name" required>
-    <select id="gender">
-      <option value="men">Man</option>
-      <option value="women">Woman</option>
-    </select>
-    <select id="preference">
-      <option value="exclusive">Only my gender’s bathroom</option>
-      <option value="shortest">Shortest among allowed (gender + mixed)</option>
-    </select>
-    <button type="submit">I want to shower</button>
-  </form>
-
-  <div class="queues">
-    <div class="queue">
-      <h2>Men’s Bathroom</h2>
-      <ol id="menQueue"></ol>
-    </div>
-    <div class="queue">
-      <h2>Women’s Bathroom</h2>
-      <ol id="womenQueue"></ol>
-    </div>
-    <div class="queue">
-      <h2>Mixed Bathroom</h2>
-      <ol id="anyQueue"></ol>
-    </div>
-  </div>
-
-  <script>
-    // ✅ Your Firebase configuration
+    // Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
       authDomain: "shower-queues.firebaseapp.com",
@@ -59,56 +19,155 @@
       appId: "1:189760261495:web:2d0d223e749f70b7f2a572"
     };
 
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+    // Init Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
-    const queues = {
-      men: db.ref("queues/men"),
-      women: db.ref("queues/women"),
-      any: db.ref("queues/any")
+    // Fixed names and genders
+    const users = {
+      "Zurdo": "M",
+      "Cami Z.": "F",
+      "Tomi": "M",
+      "Ailen": "F"
     };
 
-    const form = document.getElementById("queueForm");
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const name = document.getElementById("name").value.trim();
-      const gender = document.getElementById("gender").value;
-      const preference = document.getElementById("preference").value;
-
-      if (!name) return;
-
-      if (preference === "shortest") {
-        Promise.all([queues[gender].get(), queues.any.get()]).then(([gSnap, aSnap]) => {
-          const gLen = gSnap.exists() ? Object.keys(gSnap.val()).length : 0;
-          const aLen = aSnap.exists() ? Object.keys(aSnap.val()).length : 0;
-          const chosenQueue = gLen <= aLen ? gender : "any";
-          queues[chosenQueue].push(name);
-        });
-      } else {
-        queues[gender].push(name);
-      }
-
-      form.reset();
+    // Dropdown setup
+    window.addEventListener("DOMContentLoaded", () => {
+      const select = document.getElementById("nameSelect");
+      Object.keys(users).forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
     });
 
-    // Render queues in real time
-    function renderQueue(ref, elementId) {
-      ref.on("value", (snapshot) => {
-        const list = document.getElementById(elementId);
-        list.innerHTML = "";
-        const data = snapshot.val() || {};
-        Object.values(data).forEach((name) => {
-          const li = document.createElement("li");
-          li.textContent = name;
-          list.appendChild(li);
-        });
-      });
+    // Utility: get current HH:MM
+    function getCurrentTime() {
+      const now = new Date();
+      return now.toTimeString().slice(0,5);
     }
 
-    renderQueue(queues.men, "menQueue");
-    renderQueue(queues.women, "womenQueue");
-    renderQueue(queues.any, "anyQueue");
+    // Add to queue
+    async function joinQueue(type) {
+      const name = document.getElementById("nameSelect").value;
+      const gender = users[name];
+      const time = getCurrentTime();
+
+      const bathroomsRef = ref(db, "bathrooms");
+      const snapshot = await get(bathroomsRef);
+      let bathrooms = snapshot.exists() ? snapshot.val() : {};
+
+      if (!bathrooms.men) bathrooms.men = { current: null, queue: {} };
+      if (!bathrooms.women) bathrooms.women = { current: null, queue: {} };
+      if (!bathrooms.any) bathrooms.any = { current: null, queue: {} };
+
+      let targetBathroom = null;
+
+      if (type === "shortest") {
+        // Pick the shortest valid queue
+        let candidates = [];
+        if (gender === "M") candidates = ["men","any"];
+        if (gender === "F") candidates = ["women","any"];
+
+        targetBathroom = candidates.reduce((minBath, b) => {
+          const len = bathrooms[b].queue ? Object.keys(bathrooms[b].queue).length : 0;
+          const minLen = bathrooms[minBath].queue ? Object.keys(bathrooms[minBath].queue).length : 0;
+          return len < minLen ? b : minBath;
+        }, candidates[0]);
+      } else if (type === "gender") {
+        targetBathroom = (gender === "M") ? "men" : "women";
+      }
+
+      // Add to chosen queue
+      const queueRef = ref(db, `bathrooms/${targetBathroom}/queue`);
+      push(queueRef, { name, time });
+    }
+
+    window.joinShortest = () => joinQueue("shortest");
+    window.joinGender = () => joinQueue("gender");
+
+    // Move to next
+    async function nextPerson(bathroom) {
+      const bathRef = ref(db, `bathrooms/${bathroom}`);
+      const snapshot = await get(bathRef);
+      if (!snapshot.exists()) return;
+      const bath = snapshot.val();
+
+      let next = null;
+      let newQueue = {};
+      if (bath.queue) {
+        const keys = Object.keys(bath.queue);
+        if (keys.length > 0) {
+          const firstKey = keys[0];
+          next = bath.queue[firstKey];
+          newQueue = { ...bath.queue };
+          delete newQueue[firstKey];
+        }
+      }
+
+      await set(bathRef, {
+        current: next,
+        queue: newQueue
+      });
+    }
+    window.nextPerson = nextPerson;
+
+    // Listen for updates and render
+    const baths = ["men","women","any"];
+    baths.forEach(b => {
+      const bathRef = ref(db, `bathrooms/${b}`);
+      onValue(bathRef, snapshot => {
+        const data = snapshot.val() || { current: null, queue: {} };
+        // Current occupant
+        document.getElementById(`${b}-current`).textContent =
+          data.current ? `${data.current.name} (${data.current.time})` : "Disponible";
+
+        // Queue
+        const ul = document.getElementById(`${b}-queue`);
+        ul.innerHTML = "";
+        for (const key in data.queue) {
+          const entry = data.queue[key];
+          const li = document.createElement("li");
+          li.textContent = `${entry.name} (${entry.time})`;
+          ul.appendChild(li);
+        }
+      });
+    });
   </script>
+</head>
+<body>
+  <h1>Organizador de duchas 🚿</h1>
+
+  <label for="nameSelect">Elegí tu nombre:</label>
+  <select id="nameSelect"></select>
+  <button onclick="joinShortest()">Fila más corta</button>
+  <button onclick="joinGender()">Fila de mi género</button>
+
+  <hr>
+
+  <div>
+    <h2>Baño de Hombres</h2>
+    <p><strong>Adentro:</strong> <span id="men-current">Disponible</span></p>
+    <button onclick="nextPerson('men')">Next</button>
+    <h3>Fila:</h3>
+    <ul id="men-queue"></ul>
+  </div>
+
+  <div>
+    <h2>Baño de Mujeres</h2>
+    <p><strong>Adentro:</strong> <span id="women-current">Disponible</span></p>
+    <button onclick="nextPerson('women')">Next</button>
+    <h3>Fila:</h3>
+    <ul id="women-queue"></ul>
+  </div>
+
+  <div>
+    <h2>Baño Mixto</h2>
+    <p><strong>Adentro:</strong> <span id="any-current">Disponible</span></p>
+    <button onclick="nextPerson('any')">Next</button>
+    <h3>Fila:</h3>
+    <ul id="any-queue"></ul>
+  </div>
 </body>
 </html>
