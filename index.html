@@ -100,7 +100,11 @@
         const keys = Object.keys(bath.queue);
         if (keys.length > 0) {
           const firstKey = keys[0];
-          next = bath.queue[firstKey];
+          const person = bath.queue[firstKey];
+          next = {
+            name: person.name,
+            time: getCurrentTime()   // overwrite with "entry time"
+          };
           newQueue = { ...bath.queue };
           delete newQueue[firstKey];
         }
