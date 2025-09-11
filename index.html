@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bathroom Queue Organizer</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; background: #f7f7f7; }
+    h1 { margin-bottom: 1rem; }
+    form { margin-bottom: 2rem; }
+    input, select, button { margin: 0.5rem; padding: 0.5rem; font-size: 1rem; }
+    .queues { display: flex; gap: 2rem; }
+    .queue { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 0 5px #ccc; flex: 1; }
+    .queue h2 { margin-top: 0; }
+    ol { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Bathroom Queue Organizer</h1>
+
+  <form id="queueForm">
+    <input type="text" id="name" placeholder="Your name" required>
+    <select id="gender">
+      <option value="men">Man</option>
+      <option value="women">Woman</option>
+    </select>
+    <select id="preference">
+      <option value="exclusive">Only my gender’s bathroom</option>
+      <option value="shortest">Shortest among allowed (gender + mixed)</option>
+    </select>
+    <button type="submit">I want to shower</button>
+  </form>
+
+  <div class="queues">
+    <div class="queue">
+      <h2>Men’s Bathroom</h2>
+      <ol id="menQueue"></ol>
+    </div>
+    <div class="queue">
+      <h2>Women’s Bathroom</h2>
+      <ol id="womenQueue"></ol>
+    </div>
+    <div class="queue">
+      <h2>Mixed Bathroom</h2>
+      <ol id="anyQueue"></ol>
+    </div>
+  </div>
+
+  <script>
+    // ✅ Your Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
+      authDomain: "shower-queues.firebaseapp.com",
+      databaseURL: "https://shower-queues-default-rtdb.firebaseio.com",
+      projectId: "shower-queues",
+      storageBucket: "shower-queues.firebasestorage.app",
+      messagingSenderId: "189760261495",
+      appId: "1:189760261495:web:2d0d223e749f70b7f2a572"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const queues = {
+      men: db.ref("queues/men"),
+      women: db.ref("queues/women"),
+      any: db.ref("queues/any")
+    };
+
+    const form = document.getElementById("queueForm");
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = document.getElementById("name").value.trim();
+      const gender = document.getElementById("gender").value;
+      const preference = document.getElementById("preference").value;
+
+      if (!name) return;
+
+      if (preference === "shortest") {
+        Promise.all([queues[gender].get(), queues.any.get()]).then(([gSnap, aSnap]) => {
+          const gLen = gSnap.exists() ? Object.keys(gSnap.val()).length : 0;
+          const aLen = aSnap.exists() ? Object.keys(aSnap.val()).length : 0;
+          const chosenQueue = gLen <= aLen ? gender : "any";
+          queues[chosenQueue].push(name);
+        });
+      } else {
+        queues[gender].push(name);
+      }
+
+      form.reset();
+    });
+
+    // Render queues in real time
+    function renderQueue(ref, elementId) {
+      ref.on("value", (snapshot) => {
+        const list = document.getElementById(elementId);
+        list.innerHTML = "";
+        const data = snapshot.val() || {};
+        Object.values(data).forEach((name) => {
+          const li = document.createElement("li");
+          li.textContent = name;
+          list.appendChild(li);
+        });
+      });
+    }
+
+    renderQueue(queues.men, "menQueue");
+    renderQueue(queues.women, "womenQueue");
+    renderQueue(queues.any, "anyQueue");
+  </script>
+</body>
+</html>
