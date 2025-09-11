@@ -4,11 +4,9 @@
   <meta charset="UTF-8">
   <title>Shower Queue</title>
   <script type="module">
-    // Import Firebase
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getDatabase, ref, push, onValue, set, remove, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
-    // Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
       authDomain: "shower-queues.firebaseapp.com",
@@ -52,11 +50,9 @@
 
     let selectedPerson = null;
 
-    // UI references
     function renderPeople() {
       const maleContainer = document.getElementById("male-buttons");
       const femaleContainer = document.getElementById("female-buttons");
-
       maleContainer.innerHTML = "";
       femaleContainer.innerHTML = "";
 
@@ -142,7 +138,6 @@
         `;
         container.appendChild(div);
 
-        // Listen for changes
         onValue(ref(db, `queues/${key}`), snap => {
           const list = document.getElementById(`${key}-queue`);
           list.innerHTML = "";
@@ -214,6 +209,7 @@
       background: #444;
       color: #eee;
       font-size: 16px;
+      width: 100%;
     }
     .name-btn:hover {
       background: #666;
@@ -227,9 +223,10 @@
     }
     .bathroom {
       background: #1e1e1e;
-      margin: 15px;
+      margin: 10px;
       padding: 15px;
       border-radius: 10px;
+      flex: 1;
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
     .current {
@@ -247,11 +244,19 @@
       display: flex;
       justify-content: center;
       gap: 40px;
+      margin-bottom: 20px;
     }
     #male-buttons, #female-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      max-width: 300px;
+    }
+    #bathrooms {
       display: flex;
-      flex-direction: column;
-      align-items: center;
+      justify-content: space-around;
+      margin-top: 30px;
+      gap: 20px;
     }
   </style>
 </head>
