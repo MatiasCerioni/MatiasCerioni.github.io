@@ -21,34 +21,29 @@
     const db = getDatabase(app);
 
     const bathrooms = {
-      men: { name: "Baño de Hombres", gender: "M" },
-      women: { name: "Baño de Mujeres", gender: "F" },
-      any: { name: "Baño Mixto", gender: "Any" }
+      men: { name: "Baño de Hombres", gender: "M", color: "#1e3a8a" },   // blue
+      women: { name: "Baño de Mujeres", gender: "F", color: "#9d174d" }, // pink
+      any: { name: "Baño Mixto", gender: "Any", color: "#065f46" }       // green
     };
 
     const people = [
-      { name: "Ale", gender: "F" },
-      { name: "Agus", gender: "F" },
-      { name: "Ailen", gender: "F" },
-      { name: "Cami H.", gender: "F" },
-      { name: "Cami Z.", gender: "F" },
-      { name: "Cata", gender: "F" },
-      { name: "Emma", gender: "M" },
-      { name: "Guido", gender: "M" },
-      { name: "Marcos", gender: "M" },
-      { name: "Marti", gender: "F" },
-      { name: "Nico", gender: "M" },
-      { name: "Pato", gender: "M" },
-      { name: "Román", gender: "M" },
-      { name: "Sele", gender: "F" },
-      { name: "Silvio", gender: "M" },
-      { name: "Tadeo", gender: "M" },
-      { name: "Tomi", gender: "M" },
-      { name: "Juana", gender: "F" },
+      { name: "Ale", gender: "F" }, { name: "Agus", gender: "F" },
+      { name: "Ailen", gender: "F" }, { name: "Cami H.", gender: "F" },
+      { name: "Cami Z.", gender: "F" }, { name: "Cata", gender: "F" },
+      { name: "Emma", gender: "M" }, { name: "Guido", gender: "M" },
+      { name: "Marcos", gender: "M" }, { name: "Marti", gender: "F" },
+      { name: "Nico", gender: "M" }, { name: "Pato", gender: "M" },
+      { name: "Román", gender: "M" }, { name: "Sele", gender: "F" },
+      { name: "Silvio", gender: "M" }, { name: "Tadeo", gender: "M" },
+      { name: "Tomi", gender: "M" }, { name: "Juana", gender: "F" },
       { name: "Zurdo", gender: "M" }
     ];
 
     let selectedPerson = null;
+
+    function formatTime() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
 
     function renderPeople() {
       const maleContainer = document.getElementById("male-buttons");
@@ -108,7 +103,7 @@
             push(ref(db, `queues/${shortest}`), {
               name: person.name,
               gender: person.gender,
-              time: new Date().toLocaleTimeString()
+              time: formatTime()
             });
           }
         });
@@ -117,7 +112,7 @@
         push(ref(db, `queues/${genderBathroom}`), {
           name: person.name,
           gender: person.gender,
-          time: new Date().toLocaleTimeString()
+          time: formatTime()
         });
       }
     }
@@ -127,6 +122,7 @@
       for (const [key, b] of Object.entries(bathrooms)) {
         const div = document.createElement("div");
         div.className = "bathroom";
+        div.style.background = b.color;
 
         div.innerHTML = `
           <h2>${b.name}</h2>
@@ -165,7 +161,7 @@
           const [id, person] = entries[0];
           set(ref(db, `current/${bathroom}`), {
             ...person,
-            time: new Date().toLocaleTimeString()
+            time: formatTime()
           });
           remove(ref(db, `queues/${bathroom}/${id}`));
         } else {
@@ -222,12 +218,12 @@
       cursor: pointer;
     }
     .bathroom {
-      background: #1e1e1e;
       margin: 10px;
       padding: 15px;
       border-radius: 10px;
       flex: 1;
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      color: #fff;
     }
     .current {
       margin-bottom: 10px;
@@ -243,14 +239,14 @@
     #name-matrix {
       display: flex;
       justify-content: center;
-      gap: 40px;
+      gap: 80px; /* more space to avoid overlap */
       margin-bottom: 20px;
     }
     #male-buttons, #female-buttons {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      max-width: 300px;
+      max-width: 400px;
     }
     #bathrooms {
       display: flex;
