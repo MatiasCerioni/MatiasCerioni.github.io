@@ -1,12 +1,182 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Shower Queue</title>
+  <title>Shower Queues</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, push, onValue, set, remove, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
+	@@ -20,259 +133,185 @@
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const bathrooms = {
+      men: { name: "Baño de Hombres", gender: "M", color: "#1e3a8a" },   // blue
+      any: { name: "Baño Mixto", gender: "Any", color: "#065f46" },       // green
+      women: { name: "Baño de Mujeres", gender: "F", color: "#9d174d" } // pink
+    };
+
+    const people = [
+      { name: "Ale", gender: "F" }, { name: "Agus", gender: "F" },
+      { name: "Ailen", gender: "F" }, { name: "Cami H.", gender: "F" },
+      { name: "Cami Z.", gender: "F" }, { name: "Cata", gender: "F" },
+      { name: "Emma", gender: "M" }, { name: "Guido", gender: "M" },
+      { name: "Marcos", gender: "M" }, { name: "Marti", gender: "F" },
+      { name: "Nico", gender: "M" }, { name: "Pato", gender: "M" },
+      { name: "Román", gender: "M" }, { name: "Sele", gender: "F" },
+      { name: "Silvio", gender: "M" }, { name: "Tadeo", gender: "M" },
+      { name: "Tomi", gender: "M" }, { name: "Juana", gender: "F" },
+      { name: "Zurdo", gender: "M" }
+    ];
+
+    let selectedPerson = null;
+
+    function formatTime() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderPeople() {
+      const maleContainer = document.getElementById("male-buttons");
+      const femaleContainer = document.getElementById("female-buttons");
+      maleContainer.innerHTML = "";
+      femaleContainer.innerHTML = "";
+
+      const males = people.filter(p => p.gender === "M").sort((a,b) => a.name.localeCompare(b.name));
+      const females = people.filter(p => p.gender === "F").sort((a,b) => a.name.localeCompare(b.name));
+
+      males.forEach(person => {
+        const btn = document.createElement("button");
+        btn.textContent = person.name;
+        btn.className = "name-btn";
+        btn.onclick = () => selectPerson(person);
+        maleContainer.appendChild(btn);
+      });
+
+      females.forEach(person => {
+        const btn = document.createElement("button");
+        btn.textContent = person.name;
+        btn.className = "name-btn";
+        btn.onclick = () => selectPerson(person);
+        femaleContainer.appendChild(btn);
+      });
+    }
+
+    function selectPerson(person) {
+      selectedPerson = person;
+      document.getElementById("selectedName").textContent = `Seleccionado: ${person.name}`;
+    }
+
+    function addToQueue(useShortest) {
+      if (!selectedPerson) {
+        alert("Primero elegí un nombre");
+        return;
+      }
+      const person = selectedPerson;
+
+      if (useShortest) {
+        const promises = Object.keys(bathrooms).map(b => get(ref(db, `queues/${b}`)));
+        Promise.all(promises).then(snapshots => {
+          let shortest = null;
+          let shortestLen = Infinity;
+          snapshots.forEach((snap, i) => {
+            const key = Object.keys(bathrooms)[i];
+            const b = bathrooms[key];
+            if (b.gender === person.gender || b.gender === "Any") {
+              const len = snap.exists() ? Object.keys(snap.val()).length : 0;
+              if (len < shortestLen) {
+                shortestLen = len;
+                shortest = key;
+              }
+            }
+          });
+          if (shortest) {
+            push(ref(db, `queues/${shortest}`), {
+              name: person.name,
+              gender: person.gender,
+              time: formatTime()
+            });
+          }
+        });
+      } else {
+        const genderBathroom = Object.keys(bathrooms).find(b => bathrooms[b].gender === person.gender);
+        push(ref(db, `queues/${genderBathroom}`), {
+          name: person.name,
+          gender: person.gender,
+          time: formatTime()
+        });
+      }
+    }
+
+    function setupUI() {
+      const container = document.getElementById("bathrooms");
+      for (const [key, b] of Object.entries(bathrooms)) {
+        const div = document.createElement("div");
+        div.className = "bathroom";
+        div.style.background = b.color;
+
+        div.innerHTML = `
+          <h2>${b.name}</h2>
+          <div class="current">
+            <strong>Adentro:</strong> <span id="${key}-current">Nadie</span>
+            <button onclick="nextInQueue('${key}')">Next</button>
+          </div>
+          <ul id="${key}-queue"></ul>
+        `;
+        container.appendChild(div);
+
+        onValue(ref(db, `queues/${key}`), snap => {
+          const list = document.getElementById(`${key}-queue`);
+          list.innerHTML = "";
+          if (snap.exists()) {
+            Object.entries(snap.val()).forEach(([id, person]) => {
+              const li = document.createElement("li");
+              li.innerHTML = `${person.name} (${person.time}) 
+                <button class="cancel-btn" onclick="cancelFromQueue('${key}','${id}')">❌</button>`;
+              list.appendChild(li);
+            });
+          }
+        });
+
+        onValue(ref(db, `current/${key}`), snap => {
+          const spot = document.getElementById(`${key}-current`);
+          spot.textContent = snap.exists() ? `${snap.val().name} (${snap.val().time})` : "Nadie";
+        });
+      }
+    }
+
+    window.nextInQueue = function(bathroom) {
+      get(ref(db, `queues/${bathroom}`)).then(snap => {
+        if (snap.exists()) {
+          const entries = Object.entries(snap.val());
+          const [id, person] = entries[0];
+          set(ref(db, `current/${bathroom}`), {
+            ...person,
+            time: formatTime()
+          });
+          remove(ref(db, `queues/${bathroom}/${id}`));
+        } else {
+          set(ref(db, `current/${bathroom}`), null);
+        }
+      });
+    };
+
+    window.cancelFromQueue = function(bathroom, id) {
+      remove(ref(db, `queues/${bathroom}/${id}`));
+    };
+
+    window.addToQueue = addToQueue;
+
+    renderPeople();
+    setupUI();
+  </script>
+
   <style>
     body {
-      background-color: #121212;
-      color: #f0f0f0;
+      background: #121212;
+      color: #eee;
       font-family: Arial, sans-serif;
       text-align: center;
       padding: 20px;
@@ -14,304 +184,88 @@
     h1 {
       margin-bottom: 20px;
     }
-    .container {
-      display: flex;
-      justify-content: center;
-      gap: 40px;
-      margin-top: 20px;
+    .button-row {
+      margin: 20px 0;
     }
-    .bathroom {
-      background-color: #1e1e1e;
-      border-radius: 10px;
-      padding: 15px;
-      width: 280px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    }
-    .bathroom h2 {
-      margin-bottom: 10px;
-    }
-    .queue {
-      text-align: left;
-      margin-top: 10px;
-      padding: 10px;
-      border-radius: 8px;
-    }
-    .men .queue { background-color: rgba(0, 128, 255, 0.2); }
-    .women .queue { background-color: rgba(255, 0, 128, 0.2); }
-    .any .queue { background-color: rgba(0, 255, 128, 0.2); }
     button {
-      background-color: #333;
-      color: white;
+      padding: 10px 20px;
+      margin: 5px;
       border: none;
-      border-radius: 8px;
-      padding: 12px 18px;
-      margin: 8px;
+      border-radius: 5px;
       cursor: pointer;
+    }
+    .name-btn {
+      background: #444;
+      color: #eee;
       font-size: 16px;
+      width: 100%;
     }
-    button:hover {
-      background-color: #555;
-    }
-    .name-matrix {
-      display: flex;
-      justify-content: center;
-      gap: 40px;
-      flex-wrap: wrap;
-      margin-bottom: 20px;
-    }
-    .name-column {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+    .name-btn:hover {
+      background: #666;
     }
     .cancel-btn {
-      background: none;
+      background: transparent;
       border: none;
       color: red;
+      font-size: 18px;
       cursor: pointer;
-      font-size: 16px;
-      margin-left: 8px;
+    }
+    .bathroom {
+      margin: 10px;
+      padding: 15px;
+      border-radius: 10px;
+      flex: 1;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      color: #fff;
+    }
+    .current {
+      margin-bottom: 10px;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      margin: 5px 0;
+      font-size: 18px;
+    }
+    #name-matrix {
+      display: flex;
+      justify-content: center;
+      gap: 80px; /* more space to avoid overlap */
+      margin-bottom: 20px;
+    }
+    #male-buttons, #female-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      max-width: 400px;
+    }
+    #bathrooms {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 30px;
+      gap: 20px;
     }
   </style>
 </head>
 <body>
-  <h1>🚿 Organizador de Duchas</h1>
-
-  <div class="name-matrix" id="nameMatrix"></div>
-
-  <div>
-    <button onclick="joinQueue('shortest')">Fila más corta</button>
-    <button onclick="joinQueue('gender')">Fila de mi género</button>
-  </div>
-
-  <div class="container">
-    <div class="bathroom men">
-      <h2>🚹 Hombres</h2>
-      <div><strong>Adentro:</strong> <span id="menCurrent">Disponible</span></div>
-      <button onclick="nextPerson('men')">Next</button>
-      <div class="queue">
-        <strong>Fila:</strong>
-        <ul id="menQueue"></ul>
-      </div>
+  <h1>Filas de Duchas 🚿</h1>
+  <div id="name-matrix">
+    <div>
+      <h3>Hombres</h3>
+      <div id="male-buttons"></div>
     </div>
-
-    <div class="bathroom any">
-      <h2>🚻 Mixto</h2>
-      <div><strong>Adentro:</strong> <span id="anyCurrent">Disponible</span></div>
-      <button onclick="nextPerson('any')">Next</button>
-      <div class="queue">
-        <strong>Fila:</strong>
-        <ul id="anyQueue"></ul>
-      </div>
-    </div>
-
-    <div class="bathroom women">
-      <h2>🚺 Mujeres</h2>
-      <div><strong>Adentro:</strong> <span id="womenCurrent">Disponible</span></div>
-      <button onclick="nextPerson('women')">Next</button>
-      <div class="queue">
-        <strong>Fila:</strong>
-        <ul id="womenQueue"></ul>
-      </div>
+    <div>
+      <h3>Mujeres</h3>
+      <div id="female-buttons"></div>
     </div>
   </div>
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, onValue, set, push, get, child, remove } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
-      authDomain: "shower-queues.firebaseapp.com",
-      databaseURL: "https://shower-queues-default-rtdb.firebaseio.com",
-      projectId: "shower-queues",
-      storageBucket: "shower-queues.firebasestorage.app",
-      messagingSenderId: "189760261495",
-      appId: "1:189760261495:web:2d0d223e749f70b7f2a572"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    const names = [
-      { name: "Ailen", gender: "F" },
-      { name: "Agus", gender: "F" },
-      { name: "Ale", gender: "F" },
-      { name: "Cami H.", gender: "F" },
-      { name: "Cami Z.", gender: "F" },
-      { name: "Cata", gender: "F" },
-      { name: "Emma", gender: "M" },
-      { name: "Guido", gender: "M" },
-      { name: "Juana", gender: "F" },
-      { name: "Marcos", gender: "M" },
-      { name: "Marti", gender: "F" },
-      { name: "Nico", gender: "M" },
-      { name: "Pato", gender: "M" },
-      { name: "Román", gender: "M" },
-      { name: "Sele", gender: "F" },
-      { name: "Silvio", gender: "M" },
-      { name: "Tadeo", gender: "M" },
-      { name: "Tomi", gender: "M" },
-      { name: "Zurdo", gender: "M" }
-    ];
-
-    let selectedName = null;
-    let selectedGender = null;
-
-    function renderNameMatrix() {
-      const matrix = document.getElementById("nameMatrix");
-      const males = names.filter(n => n.gender === "M").sort((a,b)=>a.name.localeCompare(b.name));
-      const females = names.filter(n => n.gender === "F").sort((a,b)=>a.name.localeCompare(b.name));
-
-      const maleCol = document.createElement("div");
-      maleCol.className = "name-column";
-      males.forEach(n => {
-        const btn = document.createElement("button");
-        btn.textContent = n.name;
-        btn.onclick = () => { selectedName = n.name; selectedGender = n.gender; };
-        maleCol.appendChild(btn);
-      });
-
-      const femaleCol = document.createElement("div");
-      femaleCol.className = "name-column";
-      females.forEach(n => {
-        const btn = document.createElement("button");
-        btn.textContent = n.name;
-        btn.onclick = () => { selectedName = n.name; selectedGender = n.gender; };
-        femaleCol.appendChild(btn);
-      });
-
-      matrix.appendChild(maleCol);
-      matrix.appendChild(femaleCol);
-    }
-    renderNameMatrix();
-
-    function getCurrentTime() {
-      return new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    }
-
-    async function isAlreadyInSystem(name) {
-      const snap = await get(ref(db, "bathrooms"));
-      if (!snap.exists()) return false;
-      const data = snap.val();
-      for (const b in data) {
-        if (data[b].current && data[b].current.name === name) return true;
-        if (data[b].queue) {
-          for (const q in data[b].queue) {
-            if (data[b].queue[q].name === name) return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    async function joinQueue(option) {
-      if (!selectedName || !selectedGender) {
-        alert("Selecciona un nombre primero.");
-        return;
-      }
-      if (await isAlreadyInSystem(selectedName)) {
-        alert(selectedName + " ya está en una fila o baño.");
-        return;
-      }
-      const bathrooms = { men: "men", women: "women", any: "any" };
-      const snap = await get(ref(db, "bathrooms"));
-      const data = snap.val() || { men:{}, women:{}, any:{} };
-
-      let choices = [];
-      if (option === "gender") {
-        if (selectedGender === "M") choices = ["men"];
-        else choices = ["women"];
-      } else {
-        choices = selectedGender === "M" ? ["men","any"] : ["women","any"];
-      }
-
-      let best = choices[0];
-      let bestLen = Number.MAX_VALUE;
-      for (const b of choices) {
-        const qlen = data[b]?.queue ? Object.keys(data[b].queue).length : 0;
-        if (qlen < bestLen) {
-          bestLen = qlen;
-          best = b;
-        }
-      }
-
-      const qRef = ref(db, "bathrooms/" + best + "/queue");
-      const entry = { name: selectedName, time: getCurrentTime(), firstInQueueSince: null };
-      await push(qRef, entry);
-    }
-
-    async function nextPerson(bathroom) {
-      const bathRef = ref(db, "bathrooms/" + bathroom);
-      const snap = await get(bathRef);
-      const bath = snap.val() || {};
-      let next = null;
-      let newQueue = bath.queue || {};
-      if (newQueue) {
-        const keys = Object.keys(newQueue);
-        if (keys.length > 0) {
-          const firstKey = keys[0];
-          next = { name: newQueue[firstKey].name, time: getCurrentTime() };
-          delete newQueue[firstKey];
-        }
-      }
-      await set(bathRef, { current: next, queue: newQueue });
-    }
-
-    async function cancelPerson(bathroom, key) {
-      await remove(ref(db, "bathrooms/" + bathroom + "/queue/" + key));
-    }
-
-    // Timer check (every 10s)
-    setInterval(async () => {
-      const snap = await get(ref(db, "bathrooms"));
-      if (!snap.exists()) return;
-      const data = snap.val();
-      const now = Date.now();
-      for (const b in data) {
-        if (data[b].current) continue; // bathroom occupied
-        if (!data[b].queue) continue;
-        const keys = Object.keys(data[b].queue);
-        if (keys.length === 0) continue;
-        const firstKey = keys[0];
-        const person = data[b].queue[firstKey];
-        if (!person.firstInQueueSince) {
-          // mark starting time
-          await set(ref(db, `bathrooms/${b}/queue/${firstKey}/firstInQueueSince`), now);
-        } else {
-          if (now - person.firstInQueueSince > 60000) { // 1 min for testing
-            await remove(ref(db, `bathrooms/${b}/queue/${firstKey}`));
-          }
-        }
-      }
-    }, 10000);
-
-    function renderQueues(data) {
-      ["men","any","women"].forEach(b => {
-        const ul = document.getElementById(b+"Queue");
-        ul.innerHTML = "";
-        if (data[b] && data[b].queue) {
-          for (const key in data[b].queue) {
-            const person = data[b].queue[key];
-            const li = document.createElement("li");
-            li.textContent = `${person.name} (${person.time})`;
-            const cancelBtn = document.createElement("button");
-            cancelBtn.textContent = "❌";
-            cancelBtn.className = "cancel-btn";
-            cancelBtn.onclick = () => cancelPerson(b, key);
-            li.appendChild(cancelBtn);
-            ul.appendChild(li);
-          }
-        }
-        const current = data[b]?.current;
-        document.getElementById(b+"Current").textContent = current ? `${current.name} (${current.time})` : "Disponible";
-      });
-    }
-
-    onValue(ref(db, "bathrooms"), snapshot => {
-      const data = snapshot.val() || {};
-      renderQueues(data);
-    });
-  </script>
+  <p id="selectedName">Seleccionado: Ninguno</p>
+  <div class="button-row">
+    <button onclick="addToQueue(true)">Fila más corta</button>
+    <button onclick="addToQueue(false)">Fila de mi género</button>
+  </div>
+  <div id="bathrooms"></div>
 </body>
 </html>
