@@ -185,7 +185,7 @@
                     activeTimers[key] = setTimeout(() => {
                       remove(ref(db, `queues/${key}/${id}`));
                       activeTimers[key] = null;
-                    }, 60 * 1000); // 1 minuto para test
+                    },20 * 60 * 1000); // 20 minutos
                   }
                 });
               }
