@@ -5,7 +5,7 @@
   <title>Shower Queue</title>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, push, onValue, set, remove, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    import { getDatabase, ref, push, onValue, set, remove, get, child } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
@@ -20,10 +20,11 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
+    // Reordenado: hombre - mixto - mujer
     const bathrooms = {
-      men: { name: "Baño de Hombres", gender: "M", color: "#1e3a8a" },   // blue
-      any: { name: "Baño Mixto", gender: "Any", color: "#065f46" },      // green
-      women: { name: "Baño de Mujeres", gender: "F", color: "#9d174d" }  // pink
+      men:   { name: "Baño de Hombres", gender: "M",   color: "#1e3a8a" },
+      any:   { name: "Baño Mixto",     gender: "Any", color: "#065f46" },
+      women: { name: "Baño de Mujeres", gender: "F",   color: "#9d174d" }
     };
 
     const people = [
@@ -40,6 +41,7 @@
     ];
 
     let selectedPerson = null;
+    const activeTimers = {}; // timers locales { bathroom: timeoutId }
 
     function formatTime() {
       return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -76,12 +78,39 @@
       document.getElementById("selectedName").textContent = `Seleccionado: ${person.name}`;
     }
 
-    function addToQueue(useShortest) {
+    // Chequea si ya está en alguna cola o adentro
+    async function isPersonAlreadyQueuedOrInside(name) {
+      const dbRef = ref(db);
+      const queuesSnap = await get(child(dbRef, "queues"));
+      if (queuesSnap.exists()) {
+        for (const [b, vals] of Object.entries(queuesSnap.val())) {
+          if (vals && Object.values(vals).some(p => p.name === name)) {
+            return true;
+          }
+        }
+      }
+      const currentSnap = await get(child(dbRef, "current"));
+      if (currentSnap.exists()) {
+        for (const [b, vals] of Object.entries(currentSnap.val())) {
+          if (vals && vals.name === name) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    async function addToQueue(useShortest) {
       if (!selectedPerson) {
         alert("Primero elegí un nombre");
         return;
       }
       const person = selectedPerson;
+
+      if (await isPersonAlreadyQueuedOrInside(person.name)) {
+        alert(`${person.name} ya está en una fila o en un baño`);
+        return;
+      }
 
       if (useShortest) {
         const promises = Object.keys(bathrooms).map(b => get(ref(db, `queues/${b}`)));
@@ -103,7 +132,8 @@
             push(ref(db, `queues/${shortest}`), {
               name: person.name,
               gender: person.gender,
-              time: formatTime()
+              time: formatTime(),
+              addedAt: Date.now()
             });
           }
         });
@@ -112,13 +142,15 @@
         push(ref(db, `queues/${genderBathroom}`), {
           name: person.name,
           gender: person.gender,
-          time: formatTime()
+          time: formatTime(),
+          addedAt: Date.now()
         });
       }
     }
 
     function setupUI() {
       const container = document.getElementById("bathrooms");
+      container.innerHTML = "";
       for (const [key, b] of Object.entries(bathrooms)) {
         const div = document.createElement("div");
         div.className = "bathroom";
@@ -134,22 +166,43 @@
         `;
         container.appendChild(div);
 
+        // Escucha la cola
         onValue(ref(db, `queues/${key}`), snap => {
           const list = document.getElementById(`${key}-queue`);
           list.innerHTML = "";
           if (snap.exists()) {
-            Object.entries(snap.val()).forEach(([id, person]) => {
+            const entries = Object.entries(snap.val());
+            entries.forEach(([id, person], idx) => {
               const li = document.createElement("li");
               li.innerHTML = `${person.name} (${person.time}) 
                 <button class="cancel-btn" onclick="cancelFromQueue('${key}','${id}')">❌</button>`;
               list.appendChild(li);
+
+              // Si está primero en la cola y baño vacío, arrancar timer
+              if (idx === 0) {
+                get(ref(db, `current/${key}`)).then(currentSnap => {
+                  if (!currentSnap.exists() && !activeTimers[key]) {
+                    activeTimers[key] = setTimeout(() => {
+                      remove(ref(db, `queues/${key}/${id}`));
+                      activeTimers[key] = null;
+                    }, 60 * 1000); // 1 minuto para test
+                  }
+                });
+              }
             });
           }
         });
 
+        // Escucha quien está adentro
         onValue(ref(db, `current/${key}`), snap => {
           const spot = document.getElementById(`${key}-current`);
           spot.textContent = snap.exists() ? `${snap.val().name} (${snap.val().time})` : "Nadie";
+
+          // Si alguien entró, cancelar timer del primero
+          if (snap.exists() && activeTimers[key]) {
+            clearTimeout(activeTimers[key]);
+            activeTimers[key] = null;
+          }
         });
       }
     }
@@ -239,7 +292,7 @@
     #name-matrix {
       display: flex;
       justify-content: center;
-      gap: 80px; /* more space to avoid overlap */
+      gap: 80px;
       margin-bottom: 20px;
     }
     #male-buttons, #female-buttons {
