@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Estadísticas de Duchas</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
+      authDomain: "shower-queues.firebaseapp.com",
+      databaseURL: "https://shower-queues-default-rtdb.firebaseio.com",
+      projectId: "shower-queues",
+      storageBucket: "shower-queues.firebasestorage.app",
+      messagingSenderId: "189760261495",
+      appId: "1:189760261495:web:2d0d223e749f70b7f2a572"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const historyRef = ref(db, "history");
+
+    // --- Insertar datos ficticios si no hay nada ---
+    function seedFakeData() {
+      const now = Date.now();
+      const fakeShowers = [
+        { name: "Emma", bathroom: "men", start: now - 7200000, end: now - 6900000 }, // 5 min
+        { name: "Cata", bathroom: "women", start: now - 6500000, end: now - 6350000 }, // 2.5 min
+        { name: "Zurdo", bathroom: "men", start: now - 6000000, end: now - 5820000 }, // 3 min
+        { name: "Juana", bathroom: "women", start: now - 5600000, end: now - 5500000 }, // 1.7 min
+        { name: "Tomi", bathroom: "any", start: now - 5000000, end: now - 4800000 }, // 3.3 min
+        { name: "Ailen", bathroom: "any", start: now - 4000000, end: now - 3880000 }, // 2 min
+        { name: "Guido", bathroom: "men", start: now - 3000000, end: now - 2800000 }, // 3.3 min
+      ];
+      fakeShowers.forEach((s, i) => {
+        set(ref(db, `history/fake${i}`), {
+          ...s,
+          duration: s.end - s.start
+        });
+      });
+    }
+
+    // --- Procesar estadísticas ---
+    onValue(historyRef, snap => {
+      if (!snap.exists()) {
+        seedFakeData();
+        return;
+      }
+
+      const data = Object.values(snap.val());
+
+      // Totales por baño
+      const totals = { men: 0, women: 0, any: 0 };
+      data.forEach(s => totals[s.bathroom]++);
+
+      document.getElementById("totals").innerText =
+        `Hombres: ${totals.men} | Mujeres: ${totals.women} | Mixto: ${totals.any}`;
+
+      // Histograma por hora del día
+      const bins = Array(24).fill(0);
+      data.forEach(s => {
+        const hour = new Date(s.start).getHours();
+        bins[hour]++;
+      });
+
+      new Chart(document.getElementById("histogram"), {
+        type: "bar",
+        data: {
+          labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+          datasets: [{
+            label: "Duchas por hora",
+            data: bins,
+            backgroundColor: "#3b82f6"
+          }]
+        }
+      });
+
+      // Ranking de duración promedio
+      const durations = {};
+      data.forEach(s => {
+        if (!durations[s.name]) durations[s.name] = [];
+        durations[s.name].push(s.duration / 60000); // en minutos
+      });
+
+      const ranking = Object.entries(durations).map(([name, arr]) => {
+        const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+        return { name, avg };
+      }).sort((a, b) => b.avg - a.avg);
+
+      const rankingList = document.getElementById("ranking");
+      rankingList.innerHTML = "";
+      ranking.forEach(r => {
+        const li = document.createElement("li");
+        li.textContent = `${r.name}: ${r.avg.toFixed(1)} min`;
+        rankingList.appendChild(li);
+      });
+    });
+  </script>
+
+  <style>
+    body {
+      background: #121212;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    canvas {
+      max-width: 700px;
+      margin: 20px auto;
+      display: block;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Estadísticas de Duchas</h1>
+  <h2>Totales por baño</h2>
+  <p id="totals"></p>
+
+  <h2>Histograma de duchas por hora</h2>
+  <canvas id="histogram"></canvas>
+
+  <h2>Ranking de duración promedio</h2>
+  <ul id="ranking"></ul>
+
+  <p><a href="index.html" style="color:#3b82f6">⬅️ Volver a las colas</a></p>
+</body>
+</html>
