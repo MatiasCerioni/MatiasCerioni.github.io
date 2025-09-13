@@ -20,7 +20,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Reordenado: hombre - mixto - mujer
     const bathrooms = {
       men:   { name: "Baño de Hombres", gender: "M",   color: "#1e3a8a" },
       any:   { name: "Baño Mixto",     gender: "Any", color: "#065f46" },
@@ -41,7 +40,7 @@
     ];
 
     let selectedPerson = null;
-    const activeTimers = {}; // timers locales { bathroom: timeoutId }
+    const activeTimers = {};
 
     function formatTime() {
       return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -78,7 +77,6 @@
       document.getElementById("selectedName").textContent = `Seleccionado: ${person.name}`;
     }
 
-    // Chequea si ya está en alguna cola o adentro
     async function isPersonAlreadyQueuedOrInside(name) {
       const dbRef = ref(db);
       const queuesSnap = await get(child(dbRef, "queues"));
@@ -166,7 +164,6 @@
         `;
         container.appendChild(div);
 
-        // Escucha la cola
         onValue(ref(db, `queues/${key}`), snap => {
           const list = document.getElementById(`${key}-queue`);
           list.innerHTML = "";
@@ -178,14 +175,13 @@
                 <button class="cancel-btn" onclick="cancelFromQueue('${key}','${id}')">❌</button>`;
               list.appendChild(li);
 
-              // Si está primero en la cola y baño vacío, arrancar timer
               if (idx === 0) {
                 get(ref(db, `current/${key}`)).then(currentSnap => {
                   if (!currentSnap.exists() && !activeTimers[key]) {
                     activeTimers[key] = setTimeout(() => {
                       remove(ref(db, `queues/${key}/${id}`));
                       activeTimers[key] = null;
-                    },20 * 60 * 1000); // 20 minutos
+                    },20 * 60 * 1000);
                   }
                 });
               }
@@ -193,12 +189,10 @@
           }
         });
 
-        // Escucha quien está adentro
         onValue(ref(db, `current/${key}`), snap => {
           const spot = document.getElementById(`${key}-current`);
           spot.textContent = snap.exists() ? `${snap.val().name} (${snap.val().time})` : "Nadie";
 
-          // Si alguien entró, cancelar timer del primero
           if (snap.exists() && activeTimers[key]) {
             clearTimeout(activeTimers[key]);
             activeTimers[key] = null;
@@ -207,20 +201,40 @@
       }
     }
 
-    window.nextInQueue = function(bathroom) {
-      get(ref(db, `queues/${bathroom}`)).then(snap => {
-        if (snap.exists()) {
-          const entries = Object.entries(snap.val());
-          const [id, person] = entries[0];
-          set(ref(db, `current/${bathroom}`), {
-            ...person,
-            time: formatTime()
-          });
-          remove(ref(db, `queues/${bathroom}/${id}`));
-        } else {
-          set(ref(db, `current/${bathroom}`), null);
-        }
-      });
+    function logShower(person, bathroom, startTimestamp, endTimestamp) {
+      const entry = {
+        name: person.name,
+        gender: person.gender,
+        bathroom,
+        start: startTimestamp,
+        end: endTimestamp,
+        durationMinutes: Math.round((endTimestamp - startTimestamp) / 60000)
+      };
+      push(ref(db, "history"), entry);
+    }
+
+    window.nextInQueue = async function(bathroom) {
+      const currentSnap = await get(ref(db, `current/${bathroom}`));
+      if (currentSnap.exists()) {
+        const currentPerson = currentSnap.val();
+        const startTime = currentPerson.addedAt || Date.now();
+        const endTime = Date.now();
+        logShower(currentPerson, bathroom, startTime, endTime);
+      }
+
+      const snap = await get(ref(db, `queues/${bathroom}`));
+      if (snap.exists()) {
+        const entries = Object.entries(snap.val());
+        const [id, person] = entries[0];
+        set(ref(db, `current/${bathroom}`), {
+          ...person,
+          time: formatTime(),
+          addedAt: Date.now()
+        });
+        remove(ref(db, `queues/${bathroom}/${id}`));
+      } else {
+        set(ref(db, `current/${bathroom}`), null);
+      }
     };
 
     window.cancelFromQueue = function(bathroom, id) {
@@ -307,6 +321,17 @@
       margin-top: 30px;
       gap: 20px;
     }
+    .stats-link {
+      margin-top: 30px;
+    }
+    .stats-link a {
+      color: #4ade80;
+      font-size: 18px;
+      text-decoration: none;
+    }
+    .stats-link a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -327,5 +352,9 @@
     <button onclick="addToQueue(false)">Fila de mi género</button>
   </div>
   <div id="bathrooms"></div>
+
+  <div class="stats-link">
+    <a href="stats.html">📊 Ver estadísticas</a>
+  </div>
 </body>
 </html>
