@@ -2,21 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Shower Queues</title>
+  <title>Shower Queue</title>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getDatabase, ref, push, onValue, set, remove, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB6FfbVvSNZKWhuY3_N4pO_x6dCRr-p5is",
-	@@ -20,259 +133,185 @@
+      authDomain: "shower-queues.firebaseapp.com",
+      databaseURL: "https://shower-queues-default-rtdb.firebaseio.com",
+      projectId: "shower-queues",
+      storageBucket: "shower-queues.firebasestorage.app",
+      messagingSenderId: "189760261495",
+      appId: "1:189760261495:web:2d0d223e749f70b7f2a572"
+    };
+
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
     const bathrooms = {
       men: { name: "Baño de Hombres", gender: "M", color: "#1e3a8a" },   // blue
-      any: { name: "Baño Mixto", gender: "Any", color: "#065f46" },       // green
-      women: { name: "Baño de Mujeres", gender: "F", color: "#9d174d" } // pink
+      women: { name: "Baño de Mujeres", gender: "F", color: "#9d174d" }, // pink
+      any: { name: "Baño Mixto", gender: "Any", color: "#065f46" }       // green
     };
 
     const people = [
@@ -250,7 +257,7 @@
   </style>
 </head>
 <body>
-  <h1>Filas de Duchas 🚿</h1>
+  <h1>Shower Queue 🚿</h1>
   <div id="name-matrix">
     <div>
       <h3>Hombres</h3>
